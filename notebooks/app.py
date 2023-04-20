@@ -180,7 +180,7 @@ app.layout = html.Div([
         figure=word_cloud_pos(),
     ),
     dcc.Graph(
-        figure=word_cloud_neg(),
+        figure=word_cloud_neu(),
     ),
     dcc.Graph(
         figure=word_cloud_neg(),
