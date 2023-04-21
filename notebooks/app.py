@@ -33,6 +33,7 @@ def get_merged_df():
     merged_df['neutral_review'] = merged_df['neutral_review'].round(1)
     merged_df['negative_review'] = merged_df['negative_review'].round(1)
     merged_df['sentiment'] = merged_df.apply(sentiment, axis=1)
+    merged_df['overall_unbin'] = merged_df['overall']
     merged_df['overall'] = merged_df['overall'].apply(lambda x: 'neg' if x == 1 or x == 2 else ('neu' if x == 3 else 'pos'))
     return merged_df
 
@@ -87,7 +88,7 @@ def prediction():
     import plotly.express as px
     df = df.groupby(['overall', 'sentiment']).size().unstack().apply(lambda x: x/x.sum(), axis=1).reset_index()
     df = pd.melt(df, id_vars=['overall'], value_vars=['neg', 'neu', 'pos'], var_name='sentiment', value_name='percentage')
-    fig = px.bar(df, x='overall', y='percentage', color='sentiment', color_discrete_map={0: 'red', 1: 'blue', 2: 'green'}, barmode='stack',
+    fig = px.bar(df, x='overall', y='percentage', color='sentiment', color_discrete_map={'neg': '#ff6961', 'neu': '#C3B1E1', 'pos': '#77DD77'}, barmode='stack',
                  labels={'overall': 'Overall Rating', 'percentage': 'Percentage', 'sentiment': 'Sentiment'}
                  )
     fig.update_layout(legend_title='Sentiment', 
@@ -131,13 +132,59 @@ def categorical_variable_summary(col_name):
                   template='plotly_white')
     return fig
 
+def get_asin():
+    df = get_merged_df()
+    df= df[df['asin'].map(df['asin'].value_counts()) > 5]['asin'].unique()
+    asin_list = df.tolist()
+    return asin_list    
+
+def get_dataset(overall, sentiment):
+    df = get_merged_df()
+    df = df[(df['overall'] == overall) & (df['sentiment'] == sentiment)]
+    df = df[['reviewText', 'overall', 'sentiment']]
+    return df
+
+
 # create a dash app layout
 app.layout = html.Div([
-    html.H1('E-Commerce Sentiment Analysis', style={'textAlign': 'center'}),
+    html.H1('Amazon E-Commerce Sentiment Analysis', style={'textAlign': 'center'}),
+    html.H2('Exploratory Data Analysis', style={'textAlign': 'center'}),
+    dcc.Graph(
+        figure=categorical_variable_summary('overall_unbin'),
+    ),
+    dcc.Graph(
+        figure=categorical_variable_summary('overall'),
+    ),
     html.H2('Prediction Analysis of every Sentiment', style={'textAlign': 'center'}),
     dcc.Graph(
         figure=prediction(),
     ),
+    html.H2('Reviews according to their sentiment:', style={'textAlign': 'center'}),
+    html.P('Select Overall'),
+    dcc.Dropdown(id="select_overall",
+                 options=[
+                     {"label": "pos", "value": "pos"},
+                     {"label": "neg", "value": "neg"},
+                     {"label": "neu", "value": "neu"}],
+                 multi=False,
+                 value=2004,
+                 style={'width': "40%"}
+                 ),
+    html.P('Select Sentiment'),
+    dcc.Dropdown(id="select_sentiment",
+                 options=[
+                     {"label": "pos", "value": "pos"},
+                     {"label": "neg", "value": "neg"},
+                     {"label": "neu", "value": "neu"}],
+                 multi=False,
+                 value=2004,
+                 style={'width': "40%"}
+                 ),
+    html.Div([
+    dcc.Graph(
+        id='datatable'
+    )
+        ]),
     html.H2('Time Charts:', style={'textAlign': 'center'}),
     dcc.Dropdown(id="select_year",
                  options=[
@@ -172,9 +219,6 @@ app.layout = html.Div([
     dcc.Graph(
         figure=categorical_variable_summary('neutral_review'),
     ),
-    dcc.Graph(
-        figure=categorical_variable_summary('overall'),
-    ),
     html.H2('Word Clouds:', style={'textAlign': 'center'}),
     dcc.Graph(
         figure=word_cloud_pos(),
@@ -184,7 +228,15 @@ app.layout = html.Div([
     ),
     dcc.Graph(
         figure=word_cloud_neg(),
-    )
+    ),
+    html.H2('Product Based Analysis:', style={'textAlign': 'center'}),
+    dcc.Dropdown(id="select_asin",
+                 options=get_asin(), 
+                 multi=False,
+                 value=2004,
+                 style={'width': "40%"}
+                 ),
+    dcc.Graph(id='product_fig')
 ])
 
 
@@ -197,7 +249,36 @@ def time_chart(selected_year):
     df['unixReviewTime'] = pd.to_datetime(df['unixReviewTime'])
     filtered_data = df[df['unixReviewTime'].dt.year == selected_year]
     # get stacked bar chart
-    fig = px.bar(filtered_data, x="unixReviewTime", y=["positive_review", "neutral_review", "negative_review"], barmode="stack")
+    fig = px.bar(filtered_data, x="unixReviewTime", y=["positive_review", "neutral_review", "negative_review"], color_discrete_map={'negative_review': '#ff6961', 'neutral_review': '#C3B1E1', 'positive_review': '#77DD77'}, barmode="stack")
+    return fig
+
+@app.callback(
+    Output('product_fig', 'figure'),
+    [Input('select_asin', 'value')]
+)
+def asin_graph(asin):
+    df = get_merged_df()
+    df = df[df['asin'] == asin]
+    sentiment_count = df['sentiment'].value_counts()
+    fig = px.pie(sentiment_count, values=sentiment_count.values, names=sentiment_count.index, title='Sentiment Analysis for ASIN')
+    fig.update_traces(textposition='inside', textinfo='percent+label')
+    return fig
+
+@app.callback(
+    Output('datatable', 'figure'),
+    [Input('select_overall', 'value'),
+     Input('select_sentiment', 'value'),]
+)
+def datatable(overall, sentiment):
+    df = get_dataset(overall, sentiment)
+    fig={
+            'data': [
+                go.Table(
+                    header=dict(values=list(df.columns)),
+                    cells=dict(values=[df[col] for col in df.columns])
+                )
+            ]   
+        }
     return fig
 
 # run the dash app
