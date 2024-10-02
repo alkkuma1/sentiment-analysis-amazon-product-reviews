@@ -2,6 +2,7 @@
 -e .
 
 # external requirements
+pandas
 click
 Sphinx
 coverage
